@@ -1,0 +1,2 @@
+# FastApi-Practice
+Fun project
