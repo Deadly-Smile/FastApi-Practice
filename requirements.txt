@@ -1,6 +1,6 @@
 bcrypt
 cryptography
-fastapi
+fastapi~=0.109.1
 psycopg2-binary
 PyMySQL
 python-jose
@@ -13,3 +13,4 @@ httpx
 pytest-asyncio
 aiofiles
 jinja2
+pydantic~=2.6.0
