@@ -1,8 +1,7 @@
-import json
 from typing import Optional
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
-from custom_response import ThrowException, Response
+from custom_response import ThrowException
 
 app = FastAPI()
 
