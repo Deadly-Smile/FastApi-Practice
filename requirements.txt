@@ -5,12 +5,13 @@ psycopg2-binary
 PyMySQL
 python-jose
 python-multipart
-SQLAlchemy
+SQLAlchemy~=2.0.25
 uvicorn
-passlib
+passlib~=1.7.4
 pytest
 httpx
 pytest-asyncio
 aiofiles
 jinja2
 pydantic~=2.6.0
+jose

@@ -1,12 +1,12 @@
 from datetime import datetime
 from typing import Optional
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from fastapi.responses import JSONResponse
-
+from utill import ThrowException
 import models
 from database import engine, SessionLocal
+from auth import get_current_user
 
 app = FastAPI()
 models.Base.metadata.create_all(bind=engine)
@@ -20,6 +20,11 @@ def get_db():
         db.close()
 
 
+def varify_user(user):
+    if user is None:
+        raise ThrowException(401, "Could not validate credentials", headers={"WWW-Authenticate": "Bearer"})
+
+
 class TodoRequest(BaseModel):
     title: str = Field(max_items=63)
     description: Optional[str]
@@ -27,38 +32,37 @@ class TodoRequest(BaseModel):
     complete: Optional[bool] = Field(False)
 
 
-def ThrowException(status_code: int, detail: str, headers: str = None):
-    if headers is None:
-        raise HTTPException(status_code=status_code, detail=detail)
-    else:
-        raise HTTPException(status_code=status_code, detail=detail, headers={"X-Header-Error": headers})
-
-
-def Response(content: object, status_code: int, headers: str = None):
-    if headers is None:
-        return JSONResponse(content=content, status_code=status_code)
-    else:
-        return JSONResponse(content=content, status_code=status_code, headers={"X-Header-Info": headers})
-
-
 @app.get("/create-database")
 async def create_database(db: Session = Depends(get_db)):
     return db.query(models.Todos).all()
 
 
+@app.get("/todo")
+async def get_todos(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    varify_user(user)
+    todos = db.query(models.Todos).filter(models.Todos.owner_id == user.get('id')).all()
+    if not todos:
+        return {"todos": []}
+    return {"todos": todos}
+
+
 @app.post("/todo")
-async def create_todo(todo: TodoRequest, db: Session = Depends(get_db)):
+async def create_todo(todo: TodoRequest, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    varify_user(user)
     db_todo = models.Todos(title=todo.title, description=todo.description, priority=todo.priority,
-                           complete=todo.complete, created_at=datetime.now())
+                           complete=todo.complete, created_at=datetime.now(), owner_id=user.get("id"))
     db.add(db_todo)
     db.commit()
-    # json.dump(db_todo.__dict__)
-    return db_todo
+    if not db_todo:
+        raise ThrowException(404, "Something is wrong")
+    return {"todo": db_todo}
 
 
 @app.put("/todo/{todo_id}")
-async def update_todo(todo_id: int, todo: TodoRequest, db: Session = Depends(get_db)):
-    db_todo = db.query(models.Todos).filter(models.Todos.id == todo_id).first()
+async def update_todo(todo_id: int, todo: TodoRequest, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    varify_user(user)
+    db_todo = (db.query(models.Todos).filter(models.Todos.id == todo_id)
+               .filter(models.Todos.owner_id == user.get("id")).first())
     if todo is None:
         raise ThrowException(404, "Todo not found")
 
@@ -73,16 +77,21 @@ async def update_todo(todo_id: int, todo: TodoRequest, db: Session = Depends(get
 
 
 @app.get("/todo/{todo_id}")
-async def get_todo(todo_id: int, db: Session = Depends(get_db)):
-    todo = db.query(models.Todos).filter(models.Todos.id == todo_id).first()
+async def get_todo(todo_id: int, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    if user is None:
+        raise ThrowException(401, "Could not validate credentials", headers={"WWW-Authenticate": "Bearer"})
+    todo = (db.query(models.Todos).filter(models.Todos.id == todo_id)
+            .filter(models.Todos.owner_id == user.get("id")).first())
     if todo is None:
         raise ThrowException(404, "Todo not found")
     return todo
 
 
 @app.delete("/todo/{todo_id}")
-async def delete_todo(todo_id: int, db: Session = Depends(get_db)):
-    if db.query(models.Todos).filter(models.Todos.id == todo_id).first() is None:
+async def delete_todo(todo_id: int, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    varify_user(user)
+    if (db.query(models.Todos).filter(models.Todos.id == todo_id)
+            .filter(models.Todos.owner_id == user.get("id")).first() is None):
         raise ThrowException(404, "Todo not found")
     db.query(models.Todos).filter(models.Todos.id == todo_id).delete()
 
@@ -91,3 +100,9 @@ async def delete_todo(todo_id: int, db: Session = Depends(get_db)):
         "status": 201,
         "transaction": "Successful"
     }
+
+
+@app.get("/todos/user")
+async def get_all_by_user(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    varify_user(user)
+    return db.query(models.Todos).filter(models.Todos.owner_id == user.get("id")).all()
